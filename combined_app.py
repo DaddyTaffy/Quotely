@@ -7,12 +7,11 @@ import requests
 app = Flask(__name__)
 CORS(app)
 
-# Simulated buyer behavior multipliers (adjusted to 0.74–0.79 range)
 BUYER_MULTIPLIERS = {
-    "CarMax": 0.89,
-    "Carvana": 0.87,
-    "CarStory": 0.85,
-    "KBB ICO": 0.84
+    "CarMax": 0.78,
+    "Carvana": 0.76,
+    "CarStory": 0.75,
+    "KBB ICO": 0.74
 }
 
 BUYER_LINKS = {
@@ -21,6 +20,10 @@ BUYER_LINKS = {
     "CarStory": "https://www.carstory.com/sell",
     "KBB ICO": "https://www.kbb.com/instant-cash-offer"
 }
+
+MARKETPLACE_TEMPLATE = """Selling my {{year}} {{make}} {{model}} {{trim}}! Runs great with only {{mileage}} miles. Clean title. VIN: {{vin}}. Asking price: ${{price}}. Reach out if interested!"""
+
+ZIP_MODIFIERS = [0.96, 0.98, 1.00, 1.02, 1.04]  # slight regional pricing variations
 
 def mileage_adjustment(base_value, miles):
     average_miles = 12000
@@ -58,26 +61,35 @@ def estimate():
             raise ValueError("VIN is required.")
 
         miles = int(data.get("miles", 0))
-        zip_code = str(data.get("zip", "00000")).zfill(5)
+        name = data.get("name", "")
+        email = data.get("email", "")
+        phone = data.get("phone", "")
+
+        zip_modifier = random.choice(ZIP_MODIFIERS)
 
         vin_details = decode_vin_nhtsa(vin)
 
-        # Introduce ZIP-based adjustment logic
-        zip_factor = (int(zip_code[-2:]) % 6 + 70) / 100  # ~0.80 to ~0.85
-        base_retail_value = round(random.randint(18000, 22000) * zip_factor, 2)
+        base_retail_value = random.randint(18000, 22000)
         adjusted_value = mileage_adjustment(base_retail_value, miles)
+        probable_value = round(adjusted_value * zip_modifier)
 
-        estimates = {
-            buyer: round(adjusted_value * multiplier)
+        offers = {
+            buyer: round(probable_value * multiplier)
             for buyer, multiplier in BUYER_MULTIPLIERS.items()
         }
+
+        marketplace_post = ""
+        if vin_details:
+            marketplace_post = MARKETPLACE_TEMPLATE.replace("{{year}}", vin_details.get("year", "")).replace("{{make}}", vin_details.get("make", "")).replace("{{model}}", vin_details.get("model", "")).replace("{{trim}}", vin_details.get("trim", "")).replace("{{mileage}}", str(miles)).replace("{{vin}}", vin).replace("{{price}}", str(probable_value))
 
         return jsonify({
             "vin": vin,
             "mileage": miles,
             "base_value": adjusted_value,
-            "offers": estimates,
-            "details": vin_details
+            "probable_value": probable_value,
+            "offers": offers,
+            "details": vin_details,
+            "marketplace_post": marketplace_post
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 400
@@ -110,9 +122,6 @@ def index():
         <label for="miles">Mileage:</label>
         <input type="number" id="miles" name="miles" required><br><br>
 
-        <label for="zip">ZIP Code:</label>
-        <input type="text" id="zip" name="zip" required><br><br>
-
         <button type="submit">Get Offers</button>
     </form>
 
@@ -126,12 +135,11 @@ def index():
             const name = document.getElementById('name').value;
             const email = document.getElementById('email').value;
             const phone = document.getElementById('phone').value;
-            const zip = document.getElementById('zip').value;
 
             const response = await fetch('/api/estimate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ vin, miles, name, email, phone, zip })
+                body: JSON.stringify({ vin, miles, name, email, phone })
             });
 
             const data = await response.json();
@@ -145,13 +153,14 @@ def index():
             resultsDiv.innerHTML = `<h3>Offers for VIN: ${data.vin}</h3>`;
             resultsDiv.innerHTML += `<p>Mileage: ${data.mileage}</p>`;
             resultsDiv.innerHTML += `<p>Base Value: $${data.base_value}</p>`;
+            resultsDiv.innerHTML += `<p><strong>Probable Market Value:</strong> $${data.probable_value}</p>`;
 
             if (data.details) {
                 resultsDiv.innerHTML += `<h4>Vehicle Details</h4>`;
                 resultsDiv.innerHTML += `<p>${data.details.year} ${data.details.make} ${data.details.model} ${data.details.trim}</p>`;
             }
 
-            resultsDiv.innerHTML += '<ul>';
+            resultsDiv.innerHTML += '<h4>Select where to send your info:</h4><ul>';
             let counter = 1;
             for (const [buyer, offer] of Object.entries(data.offers)) {
                 const buyerUrl = {
@@ -161,22 +170,26 @@ def index():
                     "KBB ICO": "https://www.kbb.com/instant-cash-offer"
                 }[buyer];
                 const redirectLink = `${buyerUrl}?name=${encodeURIComponent(name)}&email=${encodeURIComponent(email)}&phone=${encodeURIComponent(phone)}&vin=${vin}&miles=${miles}`;
-                resultsDiv.innerHTML += `<li><strong>Text ${counter}</strong> for <strong>${buyer}</strong>: $${offer} - <a href="${redirectLink}" target="_blank">Continue</a></li>`;
+                resultsDiv.innerHTML += `<li><strong>${buyer}</strong>: $${offer} - <a href="${redirectLink}" target="_blank">Send Info</a></li>`;
                 counter++;
             }
             resultsDiv.innerHTML += '</ul>';
+
+            if (data.marketplace_post) {
+                resultsDiv.innerHTML += `<h4>Want to sell it yourself?</h4><textarea rows="6" cols="60">${data.marketplace_post}</textarea>`;
+            }
         });
     </script>
 </body>
 </html>
 ''')
 
+
 # Basic test case
 def test_estimate():
     sample_data = {
         "vin": "1HGCM82633A004352",
-        "miles": 45000,
-        "zip": "90210"
+        "miles": 45000
     }
     with app.test_client() as client:
         response = client.post("/api/estimate", json=sample_data)
