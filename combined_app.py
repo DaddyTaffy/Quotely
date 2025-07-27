@@ -7,13 +7,13 @@ import requests
 app = Flask(__name__)
 CORS(app)
 
-# Simulated buyer behavior multipliers (adjusted to 0.84–0.89 range)
+# Simulated buyer behavior multipliers (adjusted to 0.74–0.79 range)
 BUYER_MULTIPLIERS = {
-    "CarMax": 0.89,
-    "Carvana": 0.88,
-    "Vroom": 0.86,
-    "KBB ICO": 0.87,
-    "CarStory": 0.84
+    "CarMax": 0.79,
+    "Carvana": 0.78,
+    "Vroom": 0.76,
+    "KBB ICO": 0.77,
+    "CarStory": 0.74
 }
 
 def mileage_adjustment(base_value, miles):
