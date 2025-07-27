@@ -7,12 +7,24 @@ import requests
 app = Flask(__name__)
 CORS(app)
 
-BUYER_MULTIPLIERS = {
-    "CarMax": 0.93,
-    "Carvana": 0.92,
-    "Vroom": 0.90,
-    "KBB ICO": 0.91,
-    "Manheim Proxy": 0.87
+# Simulated buyer behavior multipliers and URLs
+BUYER_DATA = {
+    "CarMax": {
+        "multiplier": 0.93,
+        "url": "https://www.carmax.com/sell-my-car"
+    },
+    "Carvana": {
+        "multiplier": 0.92,
+        "url": "https://www.carvana.com/sell-my-car"
+    },
+    "CarStory": {
+        "multiplier": 0.90,
+        "url": "https://www.carstory.com/sell"
+    },
+    "KBB ICO": {
+        "multiplier": 0.91,
+        "url": "https://www.kbb.com/instant-cash-offer"
+    }
 }
 
 def mileage_adjustment(base_value, miles):
@@ -51,29 +63,31 @@ def estimate():
             raise ValueError("VIN is required.")
 
         miles = int(data.get("miles", 0))
-        phone = data.get("phone", "").strip()
-        name = data.get("name", "").strip()
-        email = data.get("email", "").strip()
+        name = data.get("name", "")
+        phone = data.get("phone", "")
+        email = data.get("email", "")
 
         vin_details = decode_vin_nhtsa(vin)
 
         base_retail_value = random.randint(18000, 22000)
         adjusted_value = mileage_adjustment(base_retail_value, miles)
 
-        estimates = {
-            buyer: round(adjusted_value * multiplier)
-            for buyer, multiplier in BUYER_MULTIPLIERS.items()
-        }
-
-        message = f"Hi {name}, here are your Quotely offers for {vin}:\n" + \
-                  "\n".join([f"{k}: ${v}" for k, v in estimates.items()])
-        print(f"Sending mock SMS to {phone}:\n{message}")
+        offers = []
+        for idx, (buyer, info) in enumerate(BUYER_DATA.items(), start=1):
+            offer = round(adjusted_value * info["multiplier"])
+            redirect_url = f"{info['url']}?name={name}&phone={phone}&email={email}&vin={vin}&miles={miles}"
+            offers.append({
+                "id": idx,
+                "buyer": buyer,
+                "offer": offer,
+                "url": redirect_url
+            })
 
         return jsonify({
             "vin": vin,
             "mileage": miles,
-            "base_value": adjusted_value,
-            "offers": estimates,
+            "base_value": round(adjusted_value, 2),
+            "offers": offers,
             "details": vin_details
         })
     except Exception as e:
@@ -92,14 +106,14 @@ def index():
 <body>
     <h1>Quotely</h1>
     <form id="valuationForm">
-        <label for="name">Full Name:</label>
+        <label for="name">Name:</label>
         <input type="text" id="name" name="name" required><br><br>
 
-        <label for="phone">Phone Number:</label>
-        <input type="tel" id="phone" name="phone" required><br><br>
+        <label for="phone">Phone:</label>
+        <input type="text" id="phone" name="phone" required><br><br>
 
         <label for="email">Email:</label>
-        <input type="email" id="email" name="email"><br><br>
+        <input type="email" id="email" name="email" required><br><br>
 
         <label for="vin">VIN:</label>
         <input type="text" id="vin" name="vin" required><br><br>
@@ -107,7 +121,7 @@ def index():
         <label for="miles">Mileage:</label>
         <input type="number" id="miles" name="miles" required><br><br>
 
-        <button type="submit">Text Me the Numbers, Quotely</button>
+        <button type="submit">Get Offers</button>
     </form>
 
     <div id="results"></div>
@@ -145,8 +159,8 @@ def index():
             }
 
             resultsDiv.innerHTML += '<ul>';
-            for (const [buyer, offer] of Object.entries(data.offers)) {
-                resultsDiv.innerHTML += `<li><strong>${buyer}</strong>: $${offer}</li>`;
+            for (const offerObj of data.offers) {
+                resultsDiv.innerHTML += `<li><strong>${offerObj.buyer}</strong>: $${offerObj.offer} — <a href="${offerObj.url}" target="_blank">Text ${offerObj.id}</a></li>`;
             }
             resultsDiv.innerHTML += '</ul>';
         });
@@ -155,20 +169,21 @@ def index():
 </html>
 ''')
 
+# Basic test case
 def test_estimate():
     sample_data = {
         "vin": "1HGCM82633A004352",
         "miles": 45000,
-        "name": "Test User",
+        "name": "John Doe",
         "phone": "5551234567",
-        "email": "test@example.com"
+        "email": "john@example.com"
     }
     with app.test_client() as client:
         response = client.post("/api/estimate", json=sample_data)
         assert response.status_code == 200, "Expected 200 OK"
         json_data = response.get_json()
         assert "offers" in json_data, "Offers key missing in response"
-        assert isinstance(json_data["offers"], dict), "Offers should be a dictionary"
+        assert isinstance(json_data["offers"], list), "Offers should be a list"
         assert "details" in json_data, "VIN details missing in response"
         print("Test passed.")
 
