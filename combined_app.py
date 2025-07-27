@@ -22,13 +22,11 @@ BUYER_LINKS = {
     "KBB ICO": "https://www.kbb.com/instant-cash-offer"
 }
 
-
 def mileage_adjustment(base_value, miles):
     average_miles = 12000
     depreciation_per_mile = 0.15
     delta = (miles - average_miles) * depreciation_per_mile
     return max(base_value - delta, 1000)
-
 
 def decode_vin_nhtsa(vin):
     url = f"https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/{vin}?format=json"
@@ -48,7 +46,6 @@ def decode_vin_nhtsa(vin):
         print(f"VIN decode error: {e}")
     return {}
 
-
 @app.route("/api/estimate", methods=["POST"])
 def estimate():
     try:
@@ -61,10 +58,13 @@ def estimate():
             raise ValueError("VIN is required.")
 
         miles = int(data.get("miles", 0))
+        zip_code = str(data.get("zip", "00000")).zfill(5)
 
         vin_details = decode_vin_nhtsa(vin)
 
-        base_retail_value = random.randint(18000, 22000)
+        # Introduce ZIP-based adjustment logic
+        zip_factor = (int(zip_code[-2:]) % 6 + 70) / 100  # ~0.80 to ~0.85
+        base_retail_value = round(random.randint(18000, 22000) * zip_factor, 2)
         adjusted_value = mileage_adjustment(base_retail_value, miles)
 
         estimates = {
@@ -81,7 +81,6 @@ def estimate():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 400
-
 
 @app.route("/")
 def index():
@@ -111,6 +110,9 @@ def index():
         <label for="miles">Mileage:</label>
         <input type="number" id="miles" name="miles" required><br><br>
 
+        <label for="zip">ZIP Code:</label>
+        <input type="text" id="zip" name="zip" required><br><br>
+
         <button type="submit">Get Offers</button>
     </form>
 
@@ -124,11 +126,12 @@ def index():
             const name = document.getElementById('name').value;
             const email = document.getElementById('email').value;
             const phone = document.getElementById('phone').value;
+            const zip = document.getElementById('zip').value;
 
             const response = await fetch('/api/estimate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ vin, miles, name, email, phone })
+                body: JSON.stringify({ vin, miles, name, email, phone, zip })
             });
 
             const data = await response.json();
@@ -168,12 +171,12 @@ def index():
 </html>
 ''')
 
-
 # Basic test case
 def test_estimate():
     sample_data = {
         "vin": "1HGCM82633A004352",
-        "miles": 45000
+        "miles": 45000,
+        "zip": "90210"
     }
     with app.test_client() as client:
         response = client.post("/api/estimate", json=sample_data)
