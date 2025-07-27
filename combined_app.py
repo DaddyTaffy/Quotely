@@ -3,12 +3,10 @@ from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
 import random
 import requests
-import json
 
 app = Flask(__name__)
 CORS(app)
 
-# Simulated buyer behavior multipliers
 BUYER_MULTIPLIERS = {
     "CarMax": 0.93,
     "Carvana": 0.92,
@@ -16,9 +14,6 @@ BUYER_MULTIPLIERS = {
     "KBB ICO": 0.91,
     "Manheim Proxy": 0.87
 }
-
-# In-memory cache to store results for each (vin, miles)
-vin_cache = {}
 
 def mileage_adjustment(base_value, miles):
     average_miles = 12000
@@ -56,36 +51,31 @@ def estimate():
             raise ValueError("VIN is required.")
 
         miles = int(data.get("miles", 0))
-        cache_key = f"{vin}_{miles}"
-
-        if cache_key in vin_cache:
-            return jsonify(vin_cache[cache_key])
+        phone = data.get("phone", "").strip()
+        name = data.get("name", "").strip()
+        email = data.get("email", "").strip()
 
         vin_details = decode_vin_nhtsa(vin)
 
         base_retail_value = random.randint(18000, 22000)
         adjusted_value = mileage_adjustment(base_retail_value, miles)
 
-        # Shuffle buyer multipliers before calculating to randomize order
-        buyer_items = list(BUYER_MULTIPLIERS.items())
-        random.shuffle(buyer_items)
-
         estimates = {
             buyer: round(adjusted_value * multiplier)
-            for buyer, multiplier in buyer_items
+            for buyer, multiplier in BUYER_MULTIPLIERS.items()
         }
 
-        response_data = {
+        message = f"Hi {name}, here are your Quotely offers for {vin}:\n" + \
+                  "\n".join([f"{k}: ${v}" for k, v in estimates.items()])
+        print(f"Sending mock SMS to {phone}:\n{message}")
+
+        return jsonify({
             "vin": vin,
             "mileage": miles,
             "base_value": adjusted_value,
             "offers": estimates,
             "details": vin_details
-        }
-
-        vin_cache[cache_key] = response_data
-        return jsonify(response_data)
-
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -102,13 +92,22 @@ def index():
 <body>
     <h1>Quotely</h1>
     <form id="valuationForm">
+        <label for="name">Full Name:</label>
+        <input type="text" id="name" name="name" required><br><br>
+
+        <label for="phone">Phone Number:</label>
+        <input type="tel" id="phone" name="phone" required><br><br>
+
+        <label for="email">Email:</label>
+        <input type="email" id="email" name="email"><br><br>
+
         <label for="vin">VIN:</label>
         <input type="text" id="vin" name="vin" required><br><br>
 
         <label for="miles">Mileage:</label>
         <input type="number" id="miles" name="miles" required><br><br>
 
-        <button type="submit">Get Offers</button>
+        <button type="submit">Text Me the Numbers, Quotely</button>
     </form>
 
     <div id="results"></div>
@@ -116,13 +115,16 @@ def index():
     <script>
         document.getElementById('valuationForm').addEventListener('submit', async function(event) {
             event.preventDefault();
+            const name = document.getElementById('name').value;
+            const phone = document.getElementById('phone').value;
+            const email = document.getElementById('email').value;
             const vin = document.getElementById('vin').value;
             const miles = parseInt(document.getElementById('miles').value);
 
             const response = await fetch('/api/estimate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ vin, miles })
+                body: JSON.stringify({ name, phone, email, vin, miles })
             });
 
             const data = await response.json();
@@ -153,11 +155,13 @@ def index():
 </html>
 ''')
 
-# Basic test case
 def test_estimate():
     sample_data = {
         "vin": "1HGCM82633A004352",
-        "miles": 45000
+        "miles": 45000,
+        "name": "Test User",
+        "phone": "5551234567",
+        "email": "test@example.com"
     }
     with app.test_client() as client:
         response = client.post("/api/estimate", json=sample_data)
