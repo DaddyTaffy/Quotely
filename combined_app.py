@@ -9,10 +9,10 @@ CORS(app)
 
 # Simulated buyer behavior multipliers (adjusted to 0.74–0.79 range)
 BUYER_MULTIPLIERS = {
-    "CarMax": 0.79,
-    "Carvana": 0.77,
-    "CarStory": 0.75,
-    "KBB ICO": 0.74
+    "CarMax": 0.89,
+    "Carvana": 0.87,
+    "CarStory": 0.85,
+    "KBB ICO": 0.84
 }
 
 BUYER_LINKS = {
