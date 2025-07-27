@@ -22,9 +22,6 @@ def mileage_adjustment(base_value, miles):
     delta = (miles - average_miles) * depreciation_per_mile
     return max(base_value - delta, 1000)
 
-def service_bonus(receipts_uploaded):
-    return 500 if receipts_uploaded else 0
-
 def decode_vin_nhtsa(vin):
     url = f"https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/{vin}?format=json"
     try:
@@ -55,12 +52,11 @@ def estimate():
             raise ValueError("VIN is required.")
 
         miles = int(data.get("miles", 0))
-        receipts_uploaded = bool(data.get("receipts_uploaded", False))
 
         vin_details = decode_vin_nhtsa(vin)
 
         base_retail_value = random.randint(18000, 22000)
-        adjusted_value = mileage_adjustment(base_retail_value, miles) + service_bonus(receipts_uploaded)
+        adjusted_value = mileage_adjustment(base_retail_value, miles)
 
         estimates = {
             buyer: round(adjusted_value * multiplier)
@@ -96,9 +92,6 @@ def index():
         <label for="miles">Mileage:</label>
         <input type="number" id="miles" name="miles" required><br><br>
 
-        <label for="receipts_uploaded">Have you uploaded service receipts?</label>
-        <input type="checkbox" id="receipts_uploaded" name="receipts_uploaded"><br><br>
-
         <button type="submit">Get Offers</button>
     </form>
 
@@ -109,12 +102,11 @@ def index():
             event.preventDefault();
             const vin = document.getElementById('vin').value;
             const miles = parseInt(document.getElementById('miles').value);
-            const receipts_uploaded = document.getElementById('receipts_uploaded').checked;
 
             const response = await fetch('/api/estimate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ vin, miles, receipts_uploaded })
+                body: JSON.stringify({ vin, miles })
             });
 
             const data = await response.json();
@@ -149,8 +141,7 @@ def index():
 def test_estimate():
     sample_data = {
         "vin": "1HGCM82633A004352",
-        "miles": 45000,
-        "receipts_uploaded": True
+        "miles": 45000
     }
     with app.test_client() as client:
         response = client.post("/api/estimate", json=sample_data)
