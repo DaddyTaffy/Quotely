@@ -11,9 +11,15 @@ CORS(app)
 BUYER_MULTIPLIERS = {
     "CarMax": 0.79,
     "Carvana": 0.78,
-    "Vroom": 0.76,
-    "KBB ICO": 0.77,
-    "CarStory": 0.74
+    "CarStory": 0.74,
+    "KBB ICO": 0.77
+}
+
+BUYER_LINKS = {
+    "CarMax": "https://www.carmax.com/sell-my-car",
+    "Carvana": "https://www.carvana.com/sell-my-car",
+    "CarStory": "https://www.carstory.com/sell",
+    "KBB ICO": "https://www.kbb.com/instant-cash-offer"
 }
 
 def mileage_adjustment(base_value, miles):
@@ -128,7 +134,13 @@ def index():
 
             resultsDiv.innerHTML += '<ul>';
             for (const [buyer, offer] of Object.entries(data.offers)) {
-                resultsDiv.innerHTML += `<li><strong>${buyer}</strong>: $${offer}</li>`;
+                let url = {
+                    "CarMax": "https://www.carmax.com/sell-my-car",
+                    "Carvana": "https://www.carvana.com/sell-my-car",
+                    "CarStory": "https://www.carstory.com/sell",
+                    "KBB ICO": "https://www.kbb.com/instant-cash-offer"
+                }[buyer];
+                resultsDiv.innerHTML += `<li><strong>${buyer}</strong>: $${offer} - <a href="${url}" target="_blank">Start Now</a></li>`;
             }
             resultsDiv.innerHTML += '</ul>';
         });
