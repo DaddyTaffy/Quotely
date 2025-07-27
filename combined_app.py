@@ -3,6 +3,7 @@ from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
 import random
 import requests
+import json
 
 app = Flask(__name__)
 CORS(app)
@@ -15,6 +16,9 @@ BUYER_MULTIPLIERS = {
     "KBB ICO": 0.91,
     "Manheim Proxy": 0.87
 }
+
+# In-memory cache to store results for each (vin, miles)
+vin_cache = {}
 
 def mileage_adjustment(base_value, miles):
     average_miles = 12000
@@ -52,27 +56,36 @@ def estimate():
             raise ValueError("VIN is required.")
 
         miles = int(data.get("miles", 0))
+        cache_key = f"{vin}_{miles}"
+
+        if cache_key in vin_cache:
+            return jsonify(vin_cache[cache_key])
 
         vin_details = decode_vin_nhtsa(vin)
 
         base_retail_value = random.randint(18000, 22000)
         adjusted_value = mileage_adjustment(base_retail_value, miles)
 
-        # Apply multipliers and shuffle buyers randomly
-        estimates_list = [
-            (buyer, round(adjusted_value * multiplier + random.randint(-250, 250)))
-            for buyer, multiplier in BUYER_MULTIPLIERS.items()
-        ]
-        random.shuffle(estimates_list)
-        estimates = dict(estimates_list)
+        # Shuffle buyer multipliers before calculating to randomize order
+        buyer_items = list(BUYER_MULTIPLIERS.items())
+        random.shuffle(buyer_items)
 
-        return jsonify({
+        estimates = {
+            buyer: round(adjusted_value * multiplier)
+            for buyer, multiplier in buyer_items
+        }
+
+        response_data = {
             "vin": vin,
             "mileage": miles,
             "base_value": adjusted_value,
             "offers": estimates,
             "details": vin_details
-        })
+        }
+
+        vin_cache[cache_key] = response_data
+        return jsonify(response_data)
+
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -158,4 +171,3 @@ def test_estimate():
 if __name__ == "__main__":
     test_estimate()
     app.run(host="0.0.0.0", port=10000)
-
