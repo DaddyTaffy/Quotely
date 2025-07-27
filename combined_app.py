@@ -3,29 +3,35 @@ from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
 import random
 import requests
+import csv
+import os
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
 
-# Simulated buyer behavior multipliers and URLs
-BUYER_DATA = {
-    "CarMax": {
-        "multiplier": 0.93,
-        "url": "https://www.carmax.com/sell-my-car"
-    },
-    "Carvana": {
-        "multiplier": 0.92,
-        "url": "https://www.carvana.com/sell-my-car"
-    },
-    "CarStory": {
-        "multiplier": 0.90,
-        "url": "https://www.carstory.com/sell"
-    },
-    "KBB ICO": {
-        "multiplier": 0.91,
-        "url": "https://www.kbb.com/instant-cash-offer"
-    }
+# Simulated buyer behavior multipliers
+BUYER_MULTIPLIERS = {
+    "CarMax": 0.93,
+    "Carvana": 0.92,
+    "CarStory": 0.90,
+    "KBB ICO": 0.91
 }
+
+BUYER_LINKS = {
+    "CarMax": "https://www.carmax.com/sell-my-car",
+    "Carvana": "https://www.carvana.com/sell-my-car",
+    "CarStory": "https://www.carstory.com/sell",
+    "KBB ICO": "https://www.kbb.com/instant-cash-offer"
+}
+
+LEAD_FILE = "leads.csv"
+
+# Ensure leads file exists
+if not os.path.exists(LEAD_FILE):
+    with open(LEAD_FILE, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["timestamp", "name", "email", "phone", "vin", "miles", "offers"])
 
 def mileage_adjustment(base_value, miles):
     average_miles = 12000
@@ -51,6 +57,9 @@ def decode_vin_nhtsa(vin):
         print(f"VIN decode error: {e}")
     return {}
 
+def mock_send_sms(phone, message):
+    print(f"[MOCK SMS to {phone}]: {message}")
+
 @app.route("/api/estimate", methods=["POST"])
 def estimate():
     try:
@@ -64,34 +73,51 @@ def estimate():
 
         miles = int(data.get("miles", 0))
         name = data.get("name", "")
-        phone = data.get("phone", "")
         email = data.get("email", "")
+        phone = data.get("phone", "")
 
         vin_details = decode_vin_nhtsa(vin)
-
         base_retail_value = random.randint(18000, 22000)
         adjusted_value = mileage_adjustment(base_retail_value, miles)
 
-        offers = []
-        for idx, (buyer, info) in enumerate(BUYER_DATA.items(), start=1):
-            offer = round(adjusted_value * info["multiplier"])
-            redirect_url = f"{info['url']}?name={name}&phone={phone}&email={email}&vin={vin}&miles={miles}"
-            offers.append({
-                "id": idx,
-                "buyer": buyer,
-                "offer": offer,
-                "url": redirect_url
-            })
+        shuffled_buyers = list(BUYER_MULTIPLIERS.items())
+        random.shuffle(shuffled_buyers)
+
+        offers = {
+            buyer: round(adjusted_value * multiplier)
+            for buyer, multiplier in shuffled_buyers
+        }
+
+        if phone:
+            message = f"Hey {name or 'there'}, here are your offers:\n" + "\n".join([
+                f"Text {i+1} for {buyer}: ${offers[buyer]}"
+                for i, buyer in enumerate(offers)
+            ])
+            mock_send_sms(phone, message)
+
+        with open(LEAD_FILE, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([datetime.utcnow(), name, email, phone, vin, miles, offers])
 
         return jsonify({
             "vin": vin,
             "mileage": miles,
-            "base_value": round(adjusted_value, 2),
+            "base_value": adjusted_value,
             "offers": offers,
-            "details": vin_details
+            "details": vin_details,
+            "links": BUYER_LINKS
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+@app.route("/api/leads", methods=["GET"])
+def get_leads():
+    try:
+        with open(LEAD_FILE, mode='r') as file:
+            reader = csv.DictReader(file)
+            return jsonify(list(reader))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/")
 def index():
@@ -109,11 +135,11 @@ def index():
         <label for="name">Name:</label>
         <input type="text" id="name" name="name" required><br><br>
 
-        <label for="phone">Phone:</label>
-        <input type="text" id="phone" name="phone" required><br><br>
-
         <label for="email">Email:</label>
         <input type="email" id="email" name="email" required><br><br>
+
+        <label for="phone">Phone:</label>
+        <input type="tel" id="phone" name="phone" required><br><br>
 
         <label for="vin">VIN:</label>
         <input type="text" id="vin" name="vin" required><br><br>
@@ -129,16 +155,16 @@ def index():
     <script>
         document.getElementById('valuationForm').addEventListener('submit', async function(event) {
             event.preventDefault();
-            const name = document.getElementById('name').value;
-            const phone = document.getElementById('phone').value;
-            const email = document.getElementById('email').value;
             const vin = document.getElementById('vin').value;
             const miles = parseInt(document.getElementById('miles').value);
+            const name = document.getElementById('name').value;
+            const email = document.getElementById('email').value;
+            const phone = document.getElementById('phone').value;
 
             const response = await fetch('/api/estimate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, phone, email, vin, miles })
+                body: JSON.stringify({ vin, miles, name, email, phone })
             });
 
             const data = await response.json();
@@ -159,8 +185,11 @@ def index():
             }
 
             resultsDiv.innerHTML += '<ul>';
-            for (const offerObj of data.offers) {
-                resultsDiv.innerHTML += `<li><strong>${offerObj.buyer}</strong>: $${offerObj.offer} — <a href="${offerObj.url}" target="_blank">Text ${offerObj.id}</a></li>`;
+            let i = 1;
+            for (const [buyer, offer] of Object.entries(data.offers)) {
+                const link = data.links[buyer];
+                resultsDiv.innerHTML += `<li><strong>${buyer}</strong>: $${offer} — <a href="${link}" target="_blank">Go to site</a> (Text ${i})</li>`;
+                i++;
             }
             resultsDiv.innerHTML += '</ul>';
         });
@@ -174,16 +203,16 @@ def test_estimate():
     sample_data = {
         "vin": "1HGCM82633A004352",
         "miles": 45000,
-        "name": "John Doe",
-        "phone": "5551234567",
-        "email": "john@example.com"
+        "name": "Test User",
+        "email": "test@example.com",
+        "phone": "1234567890"
     }
     with app.test_client() as client:
         response = client.post("/api/estimate", json=sample_data)
         assert response.status_code == 200, "Expected 200 OK"
         json_data = response.get_json()
         assert "offers" in json_data, "Offers key missing in response"
-        assert isinstance(json_data["offers"], list), "Offers should be a list"
+        assert isinstance(json_data["offers"], dict), "Offers should be a dictionary"
         assert "details" in json_data, "VIN details missing in response"
         print("Test passed.")
 
