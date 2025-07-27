@@ -58,10 +58,13 @@ def estimate():
         base_retail_value = random.randint(18000, 22000)
         adjusted_value = mileage_adjustment(base_retail_value, miles)
 
-        estimates = {
-            buyer: round(adjusted_value * multiplier)
+        # Apply multipliers and shuffle buyers randomly
+        estimates_list = [
+            (buyer, round(adjusted_value * multiplier + random.randint(-250, 250)))
             for buyer, multiplier in BUYER_MULTIPLIERS.items()
-        }
+        ]
+        random.shuffle(estimates_list)
+        estimates = dict(estimates_list)
 
         return jsonify({
             "vin": vin,
@@ -155,3 +158,4 @@ def test_estimate():
 if __name__ == "__main__":
     test_estimate()
     app.run(host="0.0.0.0", port=10000)
+
