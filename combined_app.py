@@ -10,9 +10,9 @@ CORS(app)
 # Simulated buyer behavior multipliers (adjusted to 0.74–0.79 range)
 BUYER_MULTIPLIERS = {
     "CarMax": 0.79,
-    "Carvana": 0.78,
-    "CarStory": 0.74,
-    "KBB ICO": 0.77
+    "Carvana": 0.77,
+    "CarStory": 0.75,
+    "KBB ICO": 0.74
 }
 
 BUYER_LINKS = {
@@ -22,11 +22,13 @@ BUYER_LINKS = {
     "KBB ICO": "https://www.kbb.com/instant-cash-offer"
 }
 
+
 def mileage_adjustment(base_value, miles):
     average_miles = 12000
     depreciation_per_mile = 0.15
     delta = (miles - average_miles) * depreciation_per_mile
     return max(base_value - delta, 1000)
+
 
 def decode_vin_nhtsa(vin):
     url = f"https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/{vin}?format=json"
@@ -45,6 +47,7 @@ def decode_vin_nhtsa(vin):
     except Exception as e:
         print(f"VIN decode error: {e}")
     return {}
+
 
 @app.route("/api/estimate", methods=["POST"])
 def estimate():
@@ -79,6 +82,7 @@ def estimate():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
+
 @app.route("/")
 def index():
     return render_template_string('''
@@ -92,6 +96,15 @@ def index():
 <body>
     <h1>Quotely</h1>
     <form id="valuationForm">
+        <label for="name">Name:</label>
+        <input type="text" id="name" name="name" required><br><br>
+
+        <label for="email">Email:</label>
+        <input type="email" id="email" name="email" required><br><br>
+
+        <label for="phone">Phone:</label>
+        <input type="tel" id="phone" name="phone" required><br><br>
+
         <label for="vin">VIN:</label>
         <input type="text" id="vin" name="vin" required><br><br>
 
@@ -108,11 +121,14 @@ def index():
             event.preventDefault();
             const vin = document.getElementById('vin').value;
             const miles = parseInt(document.getElementById('miles').value);
+            const name = document.getElementById('name').value;
+            const email = document.getElementById('email').value;
+            const phone = document.getElementById('phone').value;
 
             const response = await fetch('/api/estimate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ vin, miles })
+                body: JSON.stringify({ vin, miles, name, email, phone })
             });
 
             const data = await response.json();
@@ -133,14 +149,17 @@ def index():
             }
 
             resultsDiv.innerHTML += '<ul>';
+            let counter = 1;
             for (const [buyer, offer] of Object.entries(data.offers)) {
-                let url = {
+                const buyerUrl = {
                     "CarMax": "https://www.carmax.com/sell-my-car",
                     "Carvana": "https://www.carvana.com/sell-my-car",
                     "CarStory": "https://www.carstory.com/sell",
                     "KBB ICO": "https://www.kbb.com/instant-cash-offer"
                 }[buyer];
-                resultsDiv.innerHTML += `<li><strong>${buyer}</strong>: $${offer} - <a href="${url}" target="_blank">Start Now</a></li>`;
+                const redirectLink = `${buyerUrl}?name=${encodeURIComponent(name)}&email=${encodeURIComponent(email)}&phone=${encodeURIComponent(phone)}&vin=${vin}&miles=${miles}`;
+                resultsDiv.innerHTML += `<li><strong>Text ${counter}</strong> for <strong>${buyer}</strong>: $${offer} - <a href="${redirectLink}" target="_blank">Continue</a></li>`;
+                counter++;
             }
             resultsDiv.innerHTML += '</ul>';
         });
@@ -148,6 +167,7 @@ def index():
 </body>
 </html>
 ''')
+
 
 # Basic test case
 def test_estimate():
